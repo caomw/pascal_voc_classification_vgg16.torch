@@ -72,7 +72,7 @@ return {
 
 	vis_submission = function(subset, classLabel, OUT, JPEGImages_DIR, top_k)
 		top_k = top_k or 20
-		local res_file_path = paths.concat(RESULTS_DIR, string.format('%s/results/VOC2012/Main/comp2_cls_%s_%s.txt', OUT, subset, classLabel))
+		local res_file_path = string.format('%s/results/VOC2012/Main/comp2_cls_%s_%s.txt', OUT, subset, classLabel)
 
 		local scores = {}
 		for line in assert(io.open(res_file_path)):lines() do
