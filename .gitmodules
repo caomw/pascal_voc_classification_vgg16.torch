@@ -13,3 +13,6 @@
 [submodule "multithreaded_batch_loader.torch"]
 	path = multithreaded_batch_loader.torch
 	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
+[submodule "external/multithreaded_batch_loader.torch"]
+	path = external/multithreaded_batch_loader.torch
+	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
