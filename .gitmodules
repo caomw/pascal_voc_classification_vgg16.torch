@@ -1,0 +1,15 @@
+[submodule "external/loadcaffe"]
+	path = external/loadcaffe
+	url = https://github.com/szagoruyko/loadcaffe
+[submodule "external/precisionrecall.torch"]
+	path = external/precisionrecall.torch
+	url = https://github.com/qassemoquab/precisionrecall.torch
+[submodule "external/texfuncs"]
+	path = external/texfuncs
+	url = https://github.com/qassemoquab/texfuncs
+[submodule "external/torch-hdf5"]
+	path = external/torch-hdf5
+	url = https://github.com/deepmind/torch-hdf5/
+[submodule "multithreaded_batch_loader.torch"]
+	path = multithreaded_batch_loader.torch
+	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
