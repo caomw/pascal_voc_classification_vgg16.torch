@@ -10,9 +10,6 @@
 [submodule "external/torch-hdf5"]
 	path = external/torch-hdf5
 	url = https://github.com/deepmind/torch-hdf5/
-[submodule "multithreaded_batch_loader.torch"]
-	path = multithreaded_batch_loader.torch
-	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
 [submodule "external/multithreaded_batch_loader.torch"]
 	path = external/multithreaded_batch_loader.torch
 	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
