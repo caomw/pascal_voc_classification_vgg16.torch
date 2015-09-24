@@ -75,7 +75,7 @@ print('Featex loading')
 tic = torch.tic()
 vgg16_loadcaffe = loadcaffe.load(PATHS.EXTERNAL.VGG16_PROTOTXT, PATHS.EXTERNAL.VGG16_CAFFEMODEL, 'cudnn'):float()
 featex = nn.Sequential()
-for i = 1, 36 do
+for i = 1, 36 do --37 is ReLU
 	featex:add(vgg16_loadcaffe:get(i))
 end
 print('Featex loaded', torch.toc(tic))
