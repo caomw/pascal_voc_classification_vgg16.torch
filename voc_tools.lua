@@ -14,7 +14,7 @@ return {
 			test = paths.concat(test_VOCdevkit_VOC2012, 'ImageSets/Main/test.txt'),
 		}
 		local numMaxSamples = 11000
-		local mkDataset = function() return {filenames = torch.CharTensor(numMaxSamples, 16), labels = torch.FloatTensor(numMaxSamples, #classes):zero(), jpegs = {}} end
+		local mkDataset = function() return {filenames = torch.CharTensor(numMaxSamples, 16), labels = torch.FloatTensor(numMaxSamples, #classes):zero(), jpegs = {}, getFileName = function(self, exampleIdx) return ffi.string(ffi.string(self.filenames[exampleIdx]:data())) end} end
 		local voc = {train = mkDataset(), val = mkDataset(), test = mkDataset()}
 
 		for _, subset in ipairs{'train', 'val', 'test'} do
