@@ -5,6 +5,7 @@ require 'optim'
 require 'datamodule'
 require 'texfuncs'
 require 'hdf5'
+tds = require 'tds'
 
 voc_tools = require 'voc_tools.lua'
 PATHS = require 'PATHS.lua'

@@ -1,5 +1,3 @@
-require 'image'
-
 local classes = {'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'}
 
 return {
@@ -8,51 +6,56 @@ return {
 
 	load = function(trainval_VOCdevkit_VOC2012, test_VOCdevkit_VOC2012)
 		local ffi = require 'ffi'
+		local tds = require 'tds'
+
 		local filelists = {
 			train = paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/train.txt'),
 			val  = paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/val.txt'),
 			test = paths.concat(test_VOCdevkit_VOC2012, 'ImageSets/Main/test.txt'),
 		}
 		local numMaxSamples = 11000
-		local mkDataset = function() return {filenames = torch.CharTensor(numMaxSamples, 16), labels = torch.FloatTensor(numMaxSamples, #classes):zero(), jpegs = {}, getFileName = function(self, exampleIdx) return ffi.string(ffi.string(self.filenames[exampleIdx]:data())) end} end
+		local mkDataset = function() return {filenames = torch.CharTensor(numMaxSamples, 16):zero(), labels = torch.FloatTensor(numMaxSamples, #classes):zero(), jpegs = tds.hash(), getFileName = function(self, exampleIdx) local ffi = require 'ffi'; return ffi.string(self.filenames[exampleIdx]:data()) end} end
 		local voc = {train = mkDataset(), val = mkDataset(), test = mkDataset()}
 
 		for _, subset in ipairs{'train', 'val', 'test'} do
 			io.input(filelists[subset])
-			local count = 1
+			local exampleIdx = 1
 			for line in io.lines() do
-				ffi.copy(voc[subset].filenames:data() + filenames:size(2) * (count - 1), line)
+				assert(exampleIdx <= numMaxSamples)
+				assert(#line < voc[subset].filenames:size(2))
+
+				ffi.copy(voc[subset].filenames:data() + voc[subset].filenames:size(2) * (exampleIdx - 1), line)
 				  
 				local f = torch.DiskFile(paths.concat(subset == 'test' and test_VOCdevkit_VOC2012 or trainval_VOCdevkit_VOC2012, 'JPEGImages', line .. '.jpg'), 'r')
 				f:binary()
 				f:seekEnd()
 				local file_size_bytes = f:position() - 1
 				f:seek(1)
-				voc[subset].jpegs[count] = torch.ByteTensor(file_size_bytes)
-				f:readByte(voc[subset][count].jpegs[count]:storage())
+				voc[subset].jpegs[exampleIdx] = torch.ByteTensor(file_size_bytes)
+				f:readByte(voc[subset].jpegs[exampleIdx]:storage())
 				f:close()
 
-				count = count + 1
+				exampleIdx = exampleIdx + 1
 			end
 		end   
 
 		for _, subset in ipairs{'train', 'val'} do
 		   for classInd, v in ipairs(classes) do
 			  io.input(paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/'..v..'_'..subset..'.txt'))
-			  local count = 1
+			  local exampleIdx = 1
 			  for line in io.lines() do
 				 if string.find(line, ' -1', 1, true) then
-					voc[subset].labels[count][classInd] = -1
+					voc[subset].labels[exampleIdx][classInd] = -1
 				 elseif string.find(line, ' 1', 1, true) then
-					voc[subset].labels[count][classInd] = 1
+					voc[subset].labels[exampleIdx][classInd] = 1
 				 end
-				 count = count + 1
+				 exampleIdx = exampleIdx + 1
 			  end
 		   end
 		end
 		
 		for _, subset in ipairs{'train', 'val', 'test'} do
-			voc[subset].numSamples = #voc.jpegs
+			voc[subset].numSamples = #voc[subset].jpegs
 			voc[subset].filenames = voc[subset].filenames:narrow(1, 1, voc[subset].numSamples)
 			voc[subset].labels = voc[subset].labels:narrow(1, 1, voc[subset].numSamples)
 		end
@@ -86,6 +89,7 @@ return {
 
 		table.sort(scores, function(a, b) return -tonumber(a[2]) < -tonumber(b[2]) end)
 
+		local image = require 'image'
 		local top_imgs = {}
 		print('K = ', top_k)
 		for i = 1, top_k do
