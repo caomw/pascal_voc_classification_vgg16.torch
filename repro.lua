@@ -35,18 +35,17 @@ dataset_loader = {
 	end,
 
 	getNumSamples = function(self, phase)
-		return #(self.voc[phase])
+		return self.voc[phase].numSamples
 	end,
 
 	loadExample = function(self, phase, exampleIdx, batchTable, i)
 		local images, labels = unpack(batchTable)
-		local imgTable = self.voc[phase][exampleIdx]
 
-		local img_decompressed = image.decompressJPG(imgTable.jpegfile, 3, 'byte')
+		local img_decompressed = image.decompressJPG(self.voc[phase].jpegs[exampleIdx], 3, 'byte')
 		local img_processed = image.scale(self:preprocessImage(img_decompressed), self.width, self.height)
 		images[i]:copy(img_processed)
 
-		labels[i]:copy(imgTable.classes)
+		labels[i]:copy(self.voc[phase].labels[exampleIdx])
 
 		collectgarbage()
 	end,
