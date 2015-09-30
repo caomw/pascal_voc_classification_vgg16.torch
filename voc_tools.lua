@@ -71,7 +71,7 @@ return {
 		for classLabelInd, classLabel in ipairs(classes) do
 			local f = assert(io.open(string.format('%s/results/VOC2012/Main/comp2_cls_%s_%s.txt', OUT, subset, classLabel), 'w'))
 			for i = 1, #(voc[subset]) do
-				f:write(string.format('%s %.12f\n', voc[subset][i].filename, scores[i][classLabelInd]))
+				f:write(string.format('%s %.12f\n', voc[subset]:getFileName(i), scores[i][classLabelInd]))
 			end
 			f:close()
 		end

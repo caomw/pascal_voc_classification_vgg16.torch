@@ -20,8 +20,8 @@ voc = voc_tools.load(PATHS.EXTERNAL.VOC_TRAINVAL, PATHS.EXTERNAL.VOC_TEST)
 dataset_loader = {
 	bgr_pixel_means = {102.9801, 115.9465, 122.7717},
 	numClasses = numClasses,
-	height = 224,
-	width = 224,
+	height = 384,
+	width = 384,
 	voc = voc,
 
 	initOnEveryThread = function(self)
@@ -68,30 +68,45 @@ print('DatasetLoader loaded', torch.toc(tic))
 tic = torch.tic()
 print('Dataset loading')
 dataset = nn.DataModule(dataset_loader)
-dataset:setBatchSize(16)
+dataset:setBatchSize(8)
 print('Dataset loaded', torch.toc(tic))
 
 print('Featex loading')
 tic = torch.tic()
-vgg16_loadcaffe = loadcaffe.load(PATHS.EXTERNAL.VGG16_PROTOTXT, PATHS.EXTERNAL.VGG16_CAFFEMODEL, 'cudnn'):float()
 featex = nn.Sequential()
+vgg16_loadcaffe = loadcaffe.load(PATHS.EXTERNAL.VGG16_PROTOTXT, PATHS.EXTERNAL.VGG16_CAFFEMODEL, 'cudnn'):float()
 for i = 1, 36 do --37 is ReLU
 	featex:add(vgg16_loadcaffe:get(i))
 end
+
+function convertLinear2Conv1x1(linmodule,in_size)
+	local convmodule = cudnn.SpatialConvolution(linmodule.weight:size(2)/(in_size[1]*in_size[2]),linmodule.weight:size(1),in_size[1],in_size[2],1,1)
+	convmodule.weight:copy(linmodule.weight)
+	convmodule.bias:copy(linmodule.bias)
+	return convmodule
+end
+
+featex.modules[33] = convertLinear2Conv1x1(featex.modules[33], {7, 7})
+featex.modules[36] = convertLinear2Conv1x1(featex.modules[36], {1, 1})
+featex:remove(32) --nn.View
+
 print('Featex loaded', torch.toc(tic))
 
 model = nn.Sequential()
-model:add(nn.View(4096))
---model:add(nn.Dropout(0.5))
-model:add(nn.Linear(4096, 2048)) --model:add(cudnn.SpatialConvolution(4096,4096,1,1,1,1))
+--model:add(nn.View(4096))
+--model:add(nn.Linear(4096, 2048))
+model:add(cudnn.SpatialConvolution(4096,4096,1,1,1,1))
 model:add(cudnn.ReLU(true))
 model:add(nn.Dropout(0.5))
 
-model:add(nn.Linear(2048, 2048)) --model:add(cudnn.SpatialConvolution(4096,4096,1,1,1,1))
+--model:add(nn.Linear(2048, 2048))
+model:add(cudnn.SpatialConvolution(4096,4096,1,1,1,1))
 model:add(cudnn.ReLU(true))
 model:add(nn.Dropout(0.5))
 
-model:add(nn.Linear(2048, numClasses)) --model:add(cudnn.SpatialConvolution(4096,numClasses,1,1,1,1))
+--model:add(nn.Linear(2048, numClasses))
+model:add(cudnn.SpatialConvolution(4096,numClasses,1,1,1,1))
+model:add(nn.SpatialAdaptiveMaxPooling(1,1))
 
 featex:cuda()
 jittering = nn.TexFunCropFlip(0):cuda()
