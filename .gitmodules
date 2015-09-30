@@ -13,3 +13,6 @@
 [submodule "external/multithreaded_batch_loader.torch"]
 	path = external/multithreaded_batch_loader.torch
 	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
+[submodule "external/fbnn"]
+	path = external/fbnn
+	url = https://github.com/facebook/fbnn

@@ -64,7 +64,7 @@ return {
 	end,
 
 	package_submission = function(voc, subset, scores, OUT)
-		assert(#(voc[subset]) == scores:size(1))
+		assert(voc[subset].numSamples == scores:size(1))
 
 		os.execute(string.format('rm -rf %s/results', OUT))
 		os.execute(string.format('mkdir -p %s/results/VOC2012/Main', OUT))
