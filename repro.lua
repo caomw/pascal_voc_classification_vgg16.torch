@@ -5,7 +5,7 @@ require 'optim'
 require 'datamodule'
 require 'texfuncs'
 require 'hdf5'
-tds = require 'tds'
+require 'tds'
 
 voc_tools = require 'voc_tools.lua'
 PATHS = require 'PATHS.lua'
@@ -16,7 +16,7 @@ numClasses = 20
 
 tic = torch.tic()
 print('DatasetLoader loading')
-voc = torch.load(PATHS.VOC_CACHED)
+voc = voc_tools.load(PATHS.EXTERNAL.VOC_TRAINVAL, PATHS.EXTERNAL.VOC_TEST)
 dataset_loader = {
 	bgr_pixel_means = {102.9801, 115.9465, 122.7717},
 	numClasses = numClasses,
