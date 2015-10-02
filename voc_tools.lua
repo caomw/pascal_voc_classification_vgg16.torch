@@ -4,28 +4,46 @@ return {
 	classes = classes,
 	numClasses = #classes,
 
-	load = function(trainval_VOCdevkit_VOC2012, test_VOCdevkit_VOC2012)
+	load = function(trainval_VOCdevkit_VOC2012, test_VOCdevkit_VOC2012, read_box_annotation)
 		local ffi = require 'ffi'
 		local tds = require 'tds'
+		local xml = require 'xml'
 
-		local filelists = {
+		local filelists = 
+		{
 			train = paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/train.txt'),
-			val  = paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/val.txt'),
+			val	= paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/val.txt'),
 			test = paths.concat(test_VOCdevkit_VOC2012, 'ImageSets/Main/test.txt'),
 		}
+
 		local numMaxSamples = 11000
-		local mkDataset = function() return {filenames = torch.CharTensor(numMaxSamples, 16):zero(), labels = torch.FloatTensor(numMaxSamples, #classes):zero(), jpegs = tds.hash(), getFileName = function(self, exampleIdx) local ffi = require 'ffi'; return ffi.string(self.filenames[exampleIdx]:data()) end} end
+		local numMaxObjectsPerSample = 5
+
+		local mkDataset = function() return 
+		{
+			filenames = torch.CharTensor(numMaxSamples, 16):zero(),
+			labels = torch.FloatTensor(numMaxSamples, #classes):zero(),
+			objectBoxes = torch.FloatTensor(numMaxSamples * numMaxObjectsPerSample, 5):zero(),
+			objectBoxesInds = torch.FloatTensor(numMaxSamples, 2):zero(),
+			jpegs = tds.hash(),
+			getFileName = function(self, exampleIdx)
+				return (require 'ffi').string(self.filenames[exampleIdx]:data())
+			end,
+			getBoxes = function(self, exampleIdx)
+				return self.objectBoxes:narrow(1, self.objectBoxesInds[exampleIdx][1], self.objectBoxesInds[exampleIdx][2])
+			end
+		} end
+
 		local voc = {train = mkDataset(), val = mkDataset(), test = mkDataset()}
 
 		for _, subset in ipairs{'train', 'val', 'test'} do
-			io.input(filelists[subset])
 			local exampleIdx = 1
-			for line in io.lines() do
+			for line in io.lines(filelists[subset]) do
 				assert(exampleIdx <= numMaxSamples)
 				assert(#line < voc[subset].filenames:size(2))
 
 				ffi.copy(voc[subset].filenames:data() + voc[subset].filenames:size(2) * (exampleIdx - 1), line)
-				  
+					
 				local f = torch.DiskFile(paths.concat(subset == 'test' and test_VOCdevkit_VOC2012 or trainval_VOCdevkit_VOC2012, 'JPEGImages', line .. '.jpg'), 'r')
 				f:binary()
 				f:seekEnd()
@@ -37,27 +55,70 @@ return {
 
 				exampleIdx = exampleIdx + 1
 			end
-		end   
+		end	 
 
 		for _, subset in ipairs{'train', 'val'} do
-		   for classInd, v in ipairs(classes) do
-			  io.input(paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/'..v..'_'..subset..'.txt'))
-			  local exampleIdx = 1
-			  for line in io.lines() do
-				 if string.find(line, ' -1', 1, true) then
-					voc[subset].labels[exampleIdx][classInd] = -1
-				 elseif string.find(line, ' 1', 1, true) then
-					voc[subset].labels[exampleIdx][classInd] = 1
-				 end
-				 exampleIdx = exampleIdx + 1
-			  end
-		   end
+			for classInd, v in ipairs(classes) do
+				local exampleIdx = 1
+				for line in io.lines(paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/'..v..'_'..subset..'.txt')) do
+					if string.find(line, ' -1', 1, true) then
+						voc[subset].labels[exampleIdx][classInd] = -1
+					elseif string.find(line, ' 1', 1, true) then
+						voc[subset].labels[exampleIdx][classInd] = 1
+					end
+					exampleIdx = exampleIdx + 1
+				end
+			end
+
+			if read_box_annotation then
+				local exampleIdx = 1
+				local objectBoxIdx = 1
+				for line in io.lines(filelists[subset]) do
+					local anno_xml = xml.loadpath(paths.concat(trainval_VOCdevkit_VOC2012, 'Annotations/' .. line ..'.xml'))
+
+					local firstObjectBoxIdx = objectBoxIdx
+					for i = 1, #anno_xml do
+						if anno_xml[i].xml == 'object' then
+							local classLabel = xml.find(anno_xml[i], 'name')[1]
+							local xmin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'xmin')[1]
+							local xmax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'xmax')[1]
+							local ymin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymin')[1]
+							local ymax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymax')[1]
+
+							for classInd = 1, #classes do
+								if classes[classInd] == classLabel then
+									assert(objectBoxIdx <= voc[subset].objectBoxes:size(1))
+
+									voc[subset].objectBoxes[objectBoxIdx] = torch.FloatTensor({classInd, xmin, ymin, xmax, ymax})
+									objectBoxIdx = objectBoxIdx + 1
+								end
+							end
+						end
+					end
+					
+					voc[subset].objectBoxesInds[exampleIdx] = torch.FloatTensor({firstObjectBoxIdx, objectBoxIdx - firstObjectBoxIdx})
+					exampleIdx = exampleIdx + 1
+				end
+			end
 		end
 		
 		for _, subset in ipairs{'train', 'val', 'test'} do
 			voc[subset].numSamples = #voc[subset].jpegs
 			voc[subset].filenames = voc[subset].filenames:narrow(1, 1, voc[subset].numSamples)
-			voc[subset].labels = voc[subset].labels:narrow(1, 1, voc[subset].numSamples)
+
+			if subset ~= 'test' then
+				voc[subset].labels = voc[subset].labels:narrow(1, 1, voc[subset].numSamples)
+			else
+				voc[subset].labels = nil
+			end
+
+			if subset ~= 'test' and read_box_annotation then
+				voc[subset].objectBoxesInds =  voc[subset].objectBoxesInds:narrow(1, 1, voc[subset].numSamples)
+				voc[subset].objectBoxes = voc[subset].objectBoxes:narrow(1, 1, voc[subset].objectBoxesInds[voc[subset].numSamples][1] + voc[subset].objectBoxesInds[voc[subset].numSamples][2])
+			else
+				voc[subset].objectBoxesInds = nil	
+				voc[subset].objectBoxes = nil
+			end
 		end
 
 		return voc
