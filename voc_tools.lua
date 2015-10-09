@@ -1,8 +1,8 @@
-local classes = {'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'}
+local classLabels = {'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'}
 
 return {
-	classes = classes,
-	numClasses = #classes,
+	classLabels = classLabels,
+	numClasses = #classLabels,
 
 	load = function(trainval_VOCdevkit_VOC2012, test_VOCdevkit_VOC2012, read_box_annotation)
 		local ffi = require 'ffi'
@@ -22,7 +22,7 @@ return {
 		local mkDataset = function() return 
 		{
 			filenames = torch.CharTensor(numMaxSamples, 16):zero(),
-			labels = torch.FloatTensor(numMaxSamples, #classes):zero(),
+			labels = torch.FloatTensor(numMaxSamples, #classLabels):zero(),
 			objectBoxes = torch.FloatTensor(numMaxSamples * numMaxObjectsPerSample, 5):zero(),
 			objectBoxesInds = torch.FloatTensor(numMaxSamples, 2):zero(),
 			jpegs = tds.hash(),
@@ -58,13 +58,13 @@ return {
 		end	 
 
 		for _, subset in ipairs{'train', 'val'} do
-			for classInd, v in ipairs(classes) do
+			for classLabelInd, v in ipairs(classLabels) do
 				local exampleIdx = 1
 				for line in io.lines(paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/'..v..'_'..subset..'.txt')) do
 					if string.find(line, ' -1', 1, true) then
-						voc[subset].labels[exampleIdx][classInd] = -1
+						voc[subset].labels[exampleIdx][classLabelInd] = -1
 					elseif string.find(line, ' 1', 1, true) then
-						voc[subset].labels[exampleIdx][classInd] = 1
+						voc[subset].labels[exampleIdx][classLabelInd] = 1
 					end
 					exampleIdx = exampleIdx + 1
 				end
@@ -85,11 +85,11 @@ return {
 							local ymin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymin')[1]
 							local ymax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymax')[1]
 
-							for classInd = 1, #classes do
-								if classes[classInd] == classLabel then
+							for classLabelInd = 1, #classLabels do
+								if classLabels[classLabelInd] == classLabel then
 									assert(objectBoxIdx <= voc[subset].objectBoxes:size(1))
 
-									voc[subset].objectBoxes[objectBoxIdx] = torch.FloatTensor({classInd, xmin, ymin, xmax, ymax})
+									voc[subset].objectBoxes[objectBoxIdx] = torch.FloatTensor({classLabelInd, xmin, ymin, xmax, ymax})
 									objectBoxIdx = objectBoxIdx + 1
 								end
 							end
@@ -124,22 +124,46 @@ return {
 		return voc
 	end,
 
-	package_submission = function(voc, subset, scores, OUT)
-		assert(voc[subset].numSamples == scores:size(1))
+	package_submission = function(OUT, voc, subset, task, ...)
+		local write = {
+			comp2_cls = function(f, classLabelInd, scores)
+				if voc[subset].numSamples ~= scores:size(1) then
+					print('WARNING: scores is not full size: ', 'expected:', voc[subset].numSamples, 'actual:', scores:size(1))
+				end
+				scores = scores:select(2, classLabelInd)
+
+				for i = 1, voc[subset].numSamples do
+					f:write(string.format('%s %.12f\n', voc[subset]:getFileName(i), scores[i]))
+				end
+			end,
+			comp4_det = function(f, classLabelInd, scores, rois, keep)
+				if voc[subset].numSamples ~= scores:size(1) or voc[subset].numSamples ~= rois:size(1) then
+					print('WARNING: scores or rois are not full size: ', 'expected:', voc[subset].numSamples, 'bad:', scores:size(1), rois:size(1))
+				end
+
+				for i = 1, keep:size(1) do
+					for j = 1, keep:size(2) do
+						local roiInd = keep[i][j][classLabelInd]
+						if roiInd == 0 then
+							break
+						end
+						f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc[subset]:getFileName(i), scores[i][roiInd][classLabelInd], rois[i][roiInd][1], rois[i][roiInd][2], rois[i][roiInd][3], rois[i][roiInd][4]))
+					end
+				end
+			end
+		}
 
 		os.execute(string.format('rm -rf %s/results', OUT))
 		os.execute(string.format('mkdir -p %s/results/VOC2012/Main', OUT))
-		for classLabelInd, classLabel in ipairs(classes) do
-			local f = assert(io.open(string.format('%s/results/VOC2012/Main/comp2_cls_%s_%s.txt', OUT, subset, classLabel), 'w'))
-			for i = 1, #(voc[subset]) do
-				f:write(string.format('%s %.12f\n', voc[subset]:getFileName(i), scores[i][classLabelInd]))
-			end
+		for classLabelInd, classLabel in ipairs(classLabels) do
+			local f = assert(io.open(string.format('%s/results/VOC2012/Main/%s_%s_%s.txt', OUT, task, subset, classLabel), 'w'))
+			write[task](f, classLabelInd, ...)
 			f:close()
 		end
-		os.execute(string.format('cd %s && tar -czf results-voc2012-%s.tar.gz results', OUT, subset))
+		os.execute(string.format('cd %s && tar -czf results-voc2012-%s-%s.tar.gz results', OUT, task, subset))
 	end,
 
-	vis_submission = function(subset, classLabel, OUT, JPEGImages_DIR, top_k)
+	vis_classification_submission = function(OUT, subset, classLabel, JPEGImages_DIR, top_k)
 		top_k = top_k or 20
 		local res_file_path = string.format('%s/results/VOC2012/Main/comp2_cls_%s_%s.txt', OUT, subset, classLabel)
 
@@ -194,13 +218,13 @@ return {
 
 		local prec = torch.FloatTensor(scores_all:size())
 		local rec = torch.FloatTensor(scores_all:size())
-		local ap = torch.FloatTensor(#classes)
+		local ap = torch.FloatTensor(#classLabels)
 
-		for classInd = 1, #classes do
-			local p, r, a = VOCevalcls(scores_all:narrow(2, classInd, 1):squeeze(), labels_all:narrow(2, classInd, 1):squeeze())
-			prec:narrow(2, classInd, 1):copy(p)
-			rec:narrow(2, classInd, 1):copy(r)
-			ap[classInd] = a
+		for classLabelInd = 1, #classLabels do
+			local p, r, a = VOCevalcls(scores_all:narrow(2, classLabelInd, 1):squeeze(), labels_all:narrow(2, classLabelInd, 1):squeeze())
+			prec:narrow(2, classLabelInd, 1):copy(p)
+			rec:narrow(2, classLabelInd, 1):copy(r)
+			ap[classLabelInd] = a
 		end
 
 		return prec, rec, ap

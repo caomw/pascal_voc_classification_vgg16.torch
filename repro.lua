@@ -7,10 +7,10 @@ require 'texfuncs'
 require 'hdf5'
 require 'tds'
 
-voc_tools = require 'voc_tools.lua'
-PATHS = require 'PATHS.lua'
-require 'external/fbnn/fbnn/Optim.lua'
-require 'MNLLCriterion.lua'
+voc_tools = paths.dofile('voc_tools.lua')
+PATHS = paths.dofile('PATHS.lua')
+paths.dofile('external/fbnn/fbnn/Optim.lua')
+paths.dofile('MNLLCriterion.lua')
 
 numClasses = 20
 
@@ -181,7 +181,7 @@ for epoch = 1, 10 do
 	torch.save(PATHS.MODEL, model)
 end
 
-voc_tools.package_submission(voc, 'val', scores_all, PATHS.DATA)
+voc_tools.package_submission(PATHS.DATA, voc, 'val', 'comp2_cls', scores_all)
 
 dataset:testing()
 model:evaluate()
@@ -198,4 +198,4 @@ for batchIdx = 1, dataset:getNumBatches() do
 	print('test', 'batch', batchIdx)
 end
 
-voc_tools.package_submission(voc, 'test', scores_all, PATHS.DATA)
+voc_tools.package_submission(PATHS.DATA, voc, 'test', 'comp2_cls', scores_all)
