@@ -2,7 +2,7 @@ require 'cunn'
 require 'cudnn'
 require 'loadcaffe'
 require 'optim'
-require 'datamodule'
+require 'multithreaded_batch_loader'
 require 'texfuncs'
 require 'hdf5'
 require 'tds'
@@ -24,7 +24,7 @@ dataset_loader = {
 	width = 384,
 	voc = voc,
 
-	initOnEveryThread = function(self)
+	runOnEveryThread = function(self)
 		require 'image'
 	end,
 
@@ -67,7 +67,7 @@ print('DatasetLoader loaded', torch.toc(tic))
 
 tic = torch.tic()
 print('Dataset loading')
-dataset = nn.DataModule(dataset_loader)
+dataset = nn.MultithreadedBatchLoader(dataset_loader)
 dataset:setBatchSize(8)
 print('Dataset loaded', torch.toc(tic))
 
