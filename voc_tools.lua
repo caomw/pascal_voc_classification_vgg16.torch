@@ -1,5 +1,50 @@
 local classLabels = {'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'}
 
+local function precisionrecall(scores_all, labels_all)
+	--adapted from VOCdevkit/VOCcode/VOCevalcls.m (VOCap.m). tested, gives equivalent results
+	local function VOCap(rec, prec)
+		local mrec = torch.cat(torch.cat(torch.FloatTensor({0}), rec), torch.FloatTensor({1}))
+		local mpre = torch.cat(torch.cat(torch.FloatTensor({0}), prec), torch.FloatTensor({0}))
+		for i=mpre:numel()-1, 1, -1 do
+			mpre[i]=math.max(mpre[i], mpre[i+1])
+		end
+
+		local i = (mrec:sub(2, mrec:numel())):ne(mrec:sub(1, mrec:numel() - 1)):nonzero():squeeze(2) + 1
+		local ap = (mrec:index(1, i) - mrec:index(1, i - 1)):cmul(mpre:index(1, i)):sum()
+
+		return ap
+	end
+
+	local function VOCevalcls(out, gt)
+		local so,si= (-out):sort()
+
+		local tp=gt:index(1, si):gt(0):float()
+		local fp=gt:index(1, si):lt(0):float()
+
+		fp=fp:cumsum()
+		tp=tp:cumsum()
+
+		local rec=tp/gt:gt(0):sum()
+		local prec=tp:cdiv(fp+tp)
+
+		local ap=VOCap(rec,prec)
+		return rec, prec, ap
+	end
+
+	local prec = torch.FloatTensor(scores_all:size())
+	local rec = torch.FloatTensor(scores_all:size())
+	local ap = torch.FloatTensor(#classLabels)
+
+	for classLabelInd = 1, #classLabels do
+		local p, r, a = VOCevalcls(scores_all:narrow(2, classLabelInd, 1):squeeze(), labels_all:narrow(2, classLabelInd, 1):squeeze())
+		prec:narrow(2, classLabelInd, 1):copy(p)
+		rec:narrow(2, classLabelInd, 1):copy(r)
+		ap[classLabelInd] = a
+	end
+
+	return prec, rec, ap
+end
+
 return {
 	classLabels = classLabels,
 	numClasses = #classLabels,
@@ -184,49 +229,10 @@ return {
 
 		image.display(top_imgs)
 	end,
+	
+	precisionrecall = precisionrecall,
 
-	precisionrecall = function(scores_all, labels_all)
-		--adapted from VOCdevkit/VOCcode/VOCevalcls.m (VOCap.m). tested, gives equivalent results
-		local function VOCap(rec, prec)
-			local mrec = torch.cat(torch.cat(torch.FloatTensor({0}), rec), torch.FloatTensor({1}))
-			local mpre = torch.cat(torch.cat(torch.FloatTensor({0}), prec), torch.FloatTensor({0}))
-			for i=mpre:numel()-1, 1, -1 do
-				mpre[i]=math.max(mpre[i], mpre[i+1])
-			end
-
-			local i = (mrec:sub(2, mrec:numel())):ne(mrec:sub(1, mrec:numel() - 1)):nonzero():squeeze(2) + 1
-			local ap = (mrec:index(1, i) - mrec:index(1, i - 1)):cmul(mpre:index(1, i)):sum()
-
-			return ap
-		end
-
-		local function VOCevalcls(out, gt)
-			local so,si= (-out):sort()
-
-			local tp=gt:index(1, si):gt(0):float()
-			local fp=gt:index(1, si):lt(0):float()
-
-			fp=fp:cumsum()
-			tp=tp:cumsum()
-
-			local rec=tp/gt:gt(0):sum()
-			local prec=tp:cdiv(fp+tp)
-
-			local ap=VOCap(rec,prec)
-			return rec, prec, ap
-		end
-
-		local prec = torch.FloatTensor(scores_all:size())
-		local rec = torch.FloatTensor(scores_all:size())
-		local ap = torch.FloatTensor(#classLabels)
-
-		for classLabelInd = 1, #classLabels do
-			local p, r, a = VOCevalcls(scores_all:narrow(2, classLabelInd, 1):squeeze(), labels_all:narrow(2, classLabelInd, 1):squeeze())
-			prec:narrow(2, classLabelInd, 1):copy(p)
-			rec:narrow(2, classLabelInd, 1):copy(r)
-			ap[classLabelInd] = a
-		end
-
-		return prec, rec, ap
+	meanAP = function(scores_all, labels_all)
+		return ({precisionrecall(scores_all, labels_all)})[3]
 	end
 }
