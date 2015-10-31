@@ -233,6 +233,6 @@ return {
 	precisionrecall = precisionrecall,
 
 	meanAP = function(scores_all, labels_all)
-		return ({precisionrecall(scores_all, labels_all)})[3]
+		return ({precisionrecall(scores_all, labels_all)})[3]:mean()
 	end
 }
