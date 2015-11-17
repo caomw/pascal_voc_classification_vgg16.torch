@@ -169,31 +169,27 @@ return {
 		return voc
 	end,
 
-	package_submission = function(OUT, voc, subset, task, ...)
+	package_submission = function(OUT, voc_subset, task, ...)
 		local write = {
 			comp2_cls = function(f, classLabelInd, scores)
-				if voc[subset].numSamples ~= scores:size(1) then
-					print('WARNING: scores is not full size: ', 'expected:', voc[subset].numSamples, 'actual:', scores:size(1))
+				if voc_subset.numSamples ~= scores:size(1) then
+					print('WARNING: scores is not full size: ', 'expected:', voc_subset.numSamples, 'actual:', scores:size(1))
 				end
 				scores = scores:select(2, classLabelInd)
 
-				for i = 1, voc[subset].numSamples do
-					f:write(string.format('%s %.12f\n', voc[subset]:getFileName(i), scores[i]))
+				for i = 1, voc_subset.numSamples do
+					f:write(string.format('%s %.12f\n', voc_subset:getFileName(i), scores[i]))
 				end
 			end,
-			comp4_det = function(f, classLabelInd, scores, rois, keep)
-				if voc[subset].numSamples ~= scores:size(1) or voc[subset].numSamples ~= rois:size(1) then
-					print('WARNING: scores or rois are not full size: ', 'expected:', voc[subset].numSamples, 'bad:', scores:size(1), rois:size(1))
+			comp4_det = function(f, classLabelInd, scores, rois, mask)
+				if voc_subset.numSamples ~= scores:size(1) or voc_subset.numSamples ~= rois:size(1) then
+					print('WARNING: scores or rois are not full size: ', 'expected:', voc_subset.numSamples, 'bad:', scores:size(1), rois:size(1))
 				end
-
-				for i = 1, keep:size(1) do
-					for j = 1, keep:size(2) do
-						local roiInd = keep[i][j][classLabelInd]
-						if roiInd == 0 then
-							break
-						end
-						f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc[subset]:getFileName(i), scores[i][roiInd][classLabelInd], rois[i][roiInd][1], rois[i][roiInd][2], rois[i][roiInd][3], rois[i][roiInd][4]))
-					end
+				
+				local inds = mask:select(2, classLabelInd):nonzero()
+				for i = 1, inds:size(1) do
+					local exampleIdx, roiInd = unpack(inds[i]:totable())
+					f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc_subset:getFileName(exampleIdx), scores[exampleIdx][classLabelInd][roiInd], unpack(rois[exampleIdx][roiInd]:totable())))
 				end
 			end
 		}
