@@ -71,15 +71,30 @@ return {
 			objectBoxes = torch.FloatTensor(numMaxSamples * numMaxObjectsPerSample, 5):zero(),
 			objectBoxesInds = torch.FloatTensor(numMaxSamples, 2):zero(),
 			jpegs = tds.hash(),
-			getFileName = function(self, exampleIdx)
+
+			getNumSamples = function(self)
+				return self.numSamples
+			end,
+
+			getImageFileName = function(self, exampleIdx)
 				return (require 'ffi').string(self.filenames[exampleIdx]:data())
 			end,
-			getBoxes = function(self, exampleIdx)
+
+			getGroundTruthBoxes = function(self, exampleIdx)
 				return self.objectBoxes:narrow(1, self.objectBoxesInds[exampleIdx][1], self.objectBoxesInds[exampleIdx][2])
+			end,
+
+			decompressImage = function(self, exampleIdx)
+				image = image or (require 'image')
+				return image.decompressJPG(self.jpegs[exampleIdx], 3, 'byte')
+			end,
+
+			getLabels = function(self, exampleIdx)
+				return self.labels[exampleIdx]
 			end
 		} end
 
-		local voc = {train = mkDataset(), val = mkDataset(), test = mkDataset()}
+		local voc = { train = mkDataset(), val = mkDataset(), test = mkDataset() }
 
 		for _, subset in ipairs{'train', 'val', 'test'} do
 			local exampleIdx = 1
@@ -166,6 +181,28 @@ return {
 			end
 		end
 
+		voc['trainval'] = {
+			getNumSamples = function(self)
+				return voc['train']:getNumSamples() + voc['val']:getNumSamples()
+			end,
+
+			getImageFileName = function(self, exampleIdx)
+				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getImageFileName(exampleIdx) or voc['val']:getImageFileName(exampleIdx - voc['train']:getNumSamples())
+			end,
+
+			getGroundTruthBoxes = function(self, exampleIdx)
+				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getGroundTruthBoxes(exampleIdx) or voc['val']:getGroundTruthBoxes(exampleIdx - voc['train']:getNumSamples())
+			end,
+
+			decompressImage = function(self, exampleIdx)
+				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:decompressImage(exampleIdx) or voc['val']:decompressImage(exampleIdx - voc['train']:getNumSamples())
+			end,
+
+			getLabels = function(self, exampleIdx)
+				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getLabels(exampleIdx) or voc['val']:getLabels(exampleIdx - voc['train']:getNumSamples())
+			end
+		}
+
 		return voc
 	end,
 
@@ -178,7 +215,7 @@ return {
 				scores = scores:select(2, classLabelInd)
 
 				for i = 1, voc_subset.numSamples do
-					f:write(string.format('%s %.12f\n', voc_subset:getFileName(i), scores[i]))
+					f:write(string.format('%s %.12f\n', voc_subset:getImageFileName(i), scores[i]))
 				end
 			end,
 			comp4_det = function(f, classLabelInd, scores, rois, mask)
@@ -189,7 +226,7 @@ return {
 				local inds = mask:select(2, classLabelInd):nonzero()
 				for i = 1, inds:size(1) do
 					local exampleIdx, roiInd = unpack(inds[i]:totable())
-					f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc_subset:getFileName(exampleIdx), scores[exampleIdx][classLabelInd][roiInd], unpack(rois[exampleIdx][roiInd]:totable())))
+					f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc_subset:getImageFileName(exampleIdx), scores[exampleIdx][classLabelInd][roiInd], unpack(rois[exampleIdx][roiInd]:totable())))
 				end
 			end
 		}

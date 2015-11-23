@@ -2,7 +2,6 @@ local MultiClassNLLCriterion, parent = torch.class('MultiClassNLLCriterion', 'nn
 
 function MultiClassNLLCriterion:__init()
    parent.__init(self)
-   print('CAREFUL ! ALL TARGETS MUST BE EITHER -1 OR 1 !')
    self.sizeAverage=true
    
    self.sequence=nn.Sequential()
