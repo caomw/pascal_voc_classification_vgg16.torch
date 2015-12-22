@@ -49,16 +49,16 @@ return {
 	classLabels = classLabels,
 	numClasses = #classLabels,
 
-	load = function(trainval_VOCdevkit_VOC2012, test_VOCdevkit_VOC2012, read_box_annotation)
+	load = function(VOCdevkit_VOCYEAR)
 		local ffi = require 'ffi'
 		local tds = require 'tds'
 		local xml = require 'xml'
 
 		local filelists = 
 		{
-			train = paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/train.txt'),
-			val	= paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/val.txt'),
-			test = paths.concat(test_VOCdevkit_VOC2012, 'ImageSets/Main/test.txt'),
+			train = paths.concat(VOCdevkit_VOCYEAR, 'ImageSets/Main/train.txt'),
+			val	= paths.concat(VOCdevkit_VOCYEAR, 'ImageSets/Main/val.txt'),
+			test = paths.concat(VOCdevkit_VOCYEAR, 'ImageSets/Main/test.txt'),
 		}
 
 		local numMaxSamples = 11000
@@ -104,7 +104,7 @@ return {
 
 				ffi.copy(voc[subset].filenames:data() + voc[subset].filenames:size(2) * (exampleIdx - 1), line)
 					
-				local f = torch.DiskFile(paths.concat(subset == 'test' and test_VOCdevkit_VOC2012 or trainval_VOCdevkit_VOC2012, 'JPEGImages', line .. '.jpg'), 'r')
+				local f = torch.DiskFile(paths.concat(VOCdevkit_VOCYEAR, 'JPEGImages', line .. '.jpg'), 'r')
 				f:binary()
 				f:seekEnd()
 				local file_size_bytes = f:position() - 1
@@ -116,11 +116,11 @@ return {
 				exampleIdx = exampleIdx + 1
 			end
 		end	 
-
-		for _, subset in ipairs{'train', 'val'} do
+		local testHasAnnotation = VOCdevkit_VOCYEAR:find('2007') ~= nil
+		for _, subset in ipairs(testHasAnnotation and {'train', 'val', 'test'} or {'train', 'val'})  do
 			for classLabelInd, v in ipairs(classLabels) do
 				local exampleIdx = 1
-				for line in io.lines(paths.concat(trainval_VOCdevkit_VOC2012, 'ImageSets/Main/'..v..'_'..subset..'.txt')) do
+				for line in io.lines(paths.concat(VOCdevkit_VOCYEAR, 'ImageSets/Main/'..v..'_'..subset..'.txt')) do
 					if string.find(line, ' -1', 1, true) then
 						voc[subset].labels[exampleIdx][classLabelInd] = -1
 					elseif string.find(line, ' 1', 1, true) then
@@ -130,54 +130,49 @@ return {
 				end
 			end
 
-			if read_box_annotation then
-				local exampleIdx = 1
-				local objectBoxIdx = 1
-				for line in io.lines(filelists[subset]) do
-					local anno_xml = xml.loadpath(paths.concat(trainval_VOCdevkit_VOC2012, 'Annotations/' .. line ..'.xml'))
+			local exampleIdx = 1
+			local objectBoxIdx = 1
+			for line in io.lines(filelists[subset]) do
+				local anno_xml = xml.loadpath(paths.concat(VOCdevkit_VOCYEAR, 'Annotations/' .. line ..'.xml'))
 
-					local firstObjectBoxIdx = objectBoxIdx
-					for i = 1, #anno_xml do
-						if anno_xml[i].xml == 'object' then
-							local classLabel = xml.find(anno_xml[i], 'name')[1]
-							local xmin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'xmin')[1]
-							local xmax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'xmax')[1]
-							local ymin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymin')[1]
-							local ymax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymax')[1]
+				local firstObjectBoxIdx = objectBoxIdx
+				for i = 1, #anno_xml do
+					if anno_xml[i].xml == 'object' then
+						local classLabel = xml.find(anno_xml[i], 'name')[1]
+						local xmin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'xmin')[1]
+						local xmax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'xmax')[1]
+						local ymin = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymin')[1]
+						local ymax = xml.find(xml.find(anno_xml[i], 'bndbox'), 'ymax')[1]
 
-							for classLabelInd = 1, #classLabels do
-								if classLabels[classLabelInd] == classLabel then
-									assert(objectBoxIdx <= voc[subset].objectBoxes:size(1))
+						for classLabelInd = 1, #classLabels do
+							if classLabels[classLabelInd] == classLabel then
+								assert(objectBoxIdx <= voc[subset].objectBoxes:size(1))
 
-									voc[subset].objectBoxes[objectBoxIdx] = torch.FloatTensor({classLabelInd, xmin, ymin, xmax, ymax})
-									objectBoxIdx = objectBoxIdx + 1
-								end
+								voc[subset].objectBoxes[objectBoxIdx] = torch.FloatTensor({classLabelInd, xmin, ymin, xmax, ymax})
+								objectBoxIdx = objectBoxIdx + 1
 							end
 						end
 					end
-					
-					voc[subset].objectBoxesInds[exampleIdx] = torch.FloatTensor({firstObjectBoxIdx, objectBoxIdx - firstObjectBoxIdx})
-					exampleIdx = exampleIdx + 1
 				end
+				
+				voc[subset].objectBoxesInds[exampleIdx] = torch.FloatTensor({firstObjectBoxIdx, objectBoxIdx - firstObjectBoxIdx})
+				exampleIdx = exampleIdx + 1
 			end
+		end
+
+		if not testHasAnnotation then
+			voc['test'].objectBoxesInds = nil
+			voc['test'].objectBoxes = nil
 		end
 		
 		for _, subset in ipairs{'train', 'val', 'test'} do
 			voc[subset].numSamples = #voc[subset].jpegs
 			voc[subset].filenames = voc[subset].filenames:narrow(1, 1, voc[subset].numSamples)
+			voc[subset].labels = voc[subset].labels:narrow(1, 1, voc[subset].numSamples)
 
-			if subset ~= 'test' then
-				voc[subset].labels = voc[subset].labels:narrow(1, 1, voc[subset].numSamples)
-			else
-				voc[subset].labels = nil
-			end
-
-			if subset ~= 'test' and read_box_annotation then
+			if voc[subset].objectBoxes and voc[subset].objectBoxesInds then
 				voc[subset].objectBoxesInds =  voc[subset].objectBoxesInds:narrow(1, 1, voc[subset].numSamples)
 				voc[subset].objectBoxes = voc[subset].objectBoxes:narrow(1, 1, voc[subset].objectBoxesInds[voc[subset].numSamples][1] + voc[subset].objectBoxesInds[voc[subset].numSamples][2])
-			else
-				voc[subset].objectBoxesInds = nil	
-				voc[subset].objectBoxes = nil
 			end
 		end
 
@@ -206,44 +201,48 @@ return {
 		return voc
 	end,
 
-	package_submission = function(OUT, voc_subset, task, ...)
+	package_submission = function(OUT, voc, VOCYEAR, subset, task, ...)
+		local task_a, task_b  = task:sub(1, 4), task:sub(6, 8)
 		local write = {
-			comp2_cls = function(f, classLabelInd, scores)
-				if voc_subset.numSamples ~= scores:size(1) then
-					print('WARNING: scores is not full size: ', 'expected:', voc_subset.numSamples, 'actual:', scores:size(1))
+			cls = function(f, classLabelInd, scores)
+				if voc[subset].numSamples ~= scores:size(1) then
+					print('WARNING: scores is not full size: ', 'expected:', voc[subset].numSamples, 'actual:', scores:size(1))
 				end
 				scores = scores:select(2, classLabelInd)
 
-				for i = 1, voc_subset.numSamples do
-					f:write(string.format('%s %.12f\n', voc_subset:getImageFileName(i), scores[i]))
+				for i = 1, voc[subset].numSamples do
+					f:write(string.format('%s %.12f\n', voc[subset]:getImageFileName(i), scores[i]))
 				end
 			end,
-			comp4_det = function(f, classLabelInd, scores, rois, mask)
-				if voc_subset.numSamples ~= scores:size(1) or voc_subset.numSamples ~= rois:size(1) then
-					print('WARNING: scores or rois are not full size: ', 'expected:', voc_subset.numSamples, 'bad:', scores:size(1), rois:size(1))
+			det = function(f, classLabelInd, scores, rois, mask)
+				if voc[subset].numSamples ~= scores:size(1) or voc[subset].numSamples ~= rois:size(1) then
+					print('WARNING: scores or rois are not full size: ', 'expected:', voc[subset].numSamples, 'bad:', scores:size(1), rois:size(1))
 				end
 				
 				local inds = mask:select(2, classLabelInd):nonzero()
 				for i = 1, inds:size(1) do
 					local exampleIdx, roiInd = unpack(inds[i]:totable())
-					f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc_subset:getImageFileName(exampleIdx), scores[exampleIdx][classLabelInd][roiInd], unpack(rois[exampleIdx][roiInd]:totable())))
+					f:write(string.format('%s %.12f %.12f %.12f %.12f %.12f\n', voc[subset]:getImageFileName(exampleIdx), scores[exampleIdx][classLabelInd][roiInd], unpack(rois[exampleIdx][roiInd]:totable())))
 				end
 			end
 		}
 
 		os.execute(string.format('rm -rf %s/results', OUT))
-		os.execute(string.format('mkdir -p %s/results/VOC2012/Main', OUT))
+		os.execute(string.format('mkdir -p %s/results/%s/Main', OUT, VOCYEAR))
+
+		local respath = string.format('%s/results/%s/Main/%%s_%s_%s_%%s.txt', OUT, VOCYEAR, task_b, subset)
 		for classLabelInd, classLabel in ipairs(classLabels) do
-			local f = assert(io.open(string.format('%s/results/VOC2012/Main/%s_%s_%s.txt', OUT, task, subset, classLabel), 'w'))
-			write[task](f, classLabelInd, ...)
+			local f = assert(io.open(respath:format(task_a, classLabel), 'w'))
+			write[task_b](f, classLabelInd, ...)
 			f:close()
 		end
-		os.execute(string.format('cd %s && tar -czf results-voc2012-%s-%s.tar.gz results', OUT, task, subset))
+		os.execute(string.format('cd %s && tar -czf results-%s-%s-%s.tar.gz results', OUT, VOCYEAR, task, subset))
+		return respath
 	end,
 
-	vis_classification_submission = function(OUT, subset, classLabel, JPEGImages_DIR, top_k)
+	vis_classification_submission = function(OUT, VOCYEAR, subset, classLabel, JPEGImages_DIR, top_k)
 		top_k = top_k or 20
-		local res_file_path = string.format('%s/results/VOC2012/Main/comp2_cls_%s_%s.txt', OUT, subset, classLabel)
+		local res_file_path = string.format('%s/results/%s/Main/comp2_cls_%s_%s.txt', OUT, VOCYEAR, subset, classLabel)
 
 		local scores = {}
 		for line in assert(io.open(res_file_path)):lines() do
