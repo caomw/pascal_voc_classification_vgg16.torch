@@ -7,12 +7,6 @@
 [submodule "external/texfuncs"]
 	path = external/texfuncs
 	url = https://github.com/qassemoquab/texfuncs
-[submodule "external/torch-hdf5"]
-	path = external/torch-hdf5
-	url = https://github.com/deepmind/torch-hdf5/
-[submodule "external/multithreaded_batch_loader.torch"]
-	path = external/multithreaded_batch_loader.torch
-	url = https://github.com/vadimkantorov/multithreaded_batch_loader.torch
 [submodule "external/fbnn"]
 	path = external/fbnn
 	url = https://github.com/facebook/fbnn

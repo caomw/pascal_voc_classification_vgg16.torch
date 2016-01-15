@@ -2,80 +2,86 @@ require 'cunn'
 require 'cudnn'
 require 'loadcaffe'
 require 'optim'
-require 'multithreaded_batch_loader'
 require 'texfuncs'
-require 'hdf5'
-require 'tds'
 
-voc_tools = paths.dofile('voc_tools.lua')
-PATHS = paths.dofile('PATHS.lua')
-paths.dofile('external/fbnn/fbnn/Optim.lua')
-paths.dofile('MNLLCriterion.lua')
+voc_tools = dofile('voc_tools.lua')
+PATHS = dofile('PATHS.lua')
+dofile('parallel_batch_loader.lua')
+dofile('external/fbnn/fbnn/Optim.lua')
+dofile('MNLLCriterion.lua')
 
 numClasses = 20
 
 tic = torch.tic()
 print('DatasetLoader loading')
-voc = voc_tools.load(PATHS.EXTERNAL.VOC_TRAINVAL, PATHS.EXTERNAL.VOC_TEST)
-dataset_loader = {
-	bgr_pixel_means = {102.9801, 115.9465, 122.7717},
-	numClasses = numClasses,
-	height = 384,
-	width = 384,
-	voc = voc,
+voc = voc_tools.load(PATHS.EXTERNAL.VOC_TRAINVAL_TEST)
 
-	runOnEveryThread = function(self)
-		require 'image'
-	end,
+local dataset_loader = {
+	scale = {800, 608},
+	bgrPixelMeans = {102.9801, 115.9465, 122.7717},
+	subsets = subsets or {[true] = 'train', [false] = 'val'},
 
-	makeBatchTable = function(self, batchSize)
-		local images = torch.FloatTensor(batchSize, 3, self.height, self.width)
-		local labels = torch.FloatTensor(batchSize, self.numClasses)
+	makeBatchTable = function(self, batchSize, isTrainingPhase)
+		local images = torch.FloatTensor(batchSize, 3, self.scale[2], self.scale[1])
+		local labels = torch.FloatTensor(batchSize, numClasses)
 
 		return {images, labels}
 	end,
 
-	getNumSamples = function(self, phase)
-		return self.voc[phase].numSamples
+	getNumSamples = function(self, isTrainingPhase)
+		return self.voc[self.subsets[isTrainingPhase]]:getNumSamples()
 	end,
 
-	loadExample = function(self, phase, exampleIdx, batchTable, i)
-		local images, labels = unpack(batchTable)
+	loadExample = function(self, exampleIdx, isTrainingPhase)
+		local	labels_loaded = self.voc[self.subsets[isTrainingPhase]]:getLabels(exampleIdx)
+		local	jpeg = self.voc[self.subsets[isTrainingPhase]]:getJpegBytes(exampleIdx)
+		local	scale = self.scale
+		local	numRoisPerImage = self.numRoisPerImage
+		local   bgr_pixel_means = self.bgrPixelMeans
 
-		local img_decompressed = image.decompressJPG(self.voc[phase].jpegs[exampleIdx], 3, 'byte')
-		local img_processed = image.scale(self:preprocessImage(img_decompressed), self.width, self.height)
-		images[i]:copy(img_processed)
+		local function rescale(dhw_rgb, max_width, target_height)
+			local im_scale = target_height / dhw_rgb:size(2)
+			if torch.round(dhw_rgb:size(3) * im_scale) > max_width then
+				im_scale = math.min(im_scale, max_width / dhw_rgb:size(3))
+			end
 
-		labels[i]:copy(self.voc[phase].labels[exampleIdx])
+			local scaled = image.scale(dhw_rgb, dhw_rgb:size(3) * im_scale, dhw_rgb:size(2) * im_scale):float()
+			local dhw_bgr = torch.FloatTensor(scaled:size())
 
-		collectgarbage()
-	end,
+			dhw_bgr[1]:copy(scaled[3]):add(-bgr_pixel_means[1])
+			dhw_bgr[2]:copy(scaled[2]):add(-bgr_pixel_means[2])
+			dhw_bgr[3]:copy(scaled[1]):add(-bgr_pixel_means[3])
 
-	preprocessImage = function(self, dhw_rgb_img)
-		local dhw_bgr_img = dhw_rgb_img:float():clone()
-		dhw_bgr_img[{1, {}, {}}] = dhw_rgb_img[{3, {}, {}}]
-		dhw_bgr_img[{3, {}, {}}] = dhw_rgb_img[{1, {}, {}}]
-
-		for i = 1, 3 do
-			dhw_bgr_img[i]:add(-self.bgr_pixel_means[i])
+			return dhw_bgr
 		end
 
-		return dhw_bgr_img
-	end,
+		return function(k, batchTable)
+			local images, labels = unpack(batchTable)
+
+			labels[k]:copy(labels_loaded)
+
+			image = image or require 'image'
+			local img_decompressed = image.decompressJPG(jpeg, 3, 'byte')
+			local currentSize = {width = img_decompressed:size(3), height = img_decompressed:size(2)}
+			local img_processed = rescale(img_decompressed, scale[1], scale[2])
+			images[k]:zero()
+			images[k]:sub(1, 3, 1, img_processed:size(2), 1, img_processed:size(3)):copy(img_processed)
+		end
+	end
 }
+
 print('DatasetLoader loaded', torch.toc(tic))
 
 tic = torch.tic()
 print('Dataset loading')
-dataset = nn.MultithreadedBatchLoader(dataset_loader)
-dataset:setBatchSize(8)
+dataset = ParallelBatchLoader(dataset_loader):setBatchSize(8)
 print('Dataset loaded', torch.toc(tic))
 
 print('Featex loading')
 tic = torch.tic()
 featex = nn.Sequential()
 vgg16_loadcaffe = loadcaffe.load(PATHS.EXTERNAL.VGG16_PROTOTXT, PATHS.EXTERNAL.VGG16_CAFFEMODEL, 'cudnn'):float()
-for i = 1, 36 do --37 is ReLU
+for i = 1, 37 do
 	featex:add(vgg16_loadcaffe:get(i))
 end
 

@@ -51,7 +51,6 @@ return {
 
 	load = function(VOCdevkit_VOCYEAR)
 		local ffi = require 'ffi'
-		local tds = require 'tds'
 		local xml = require 'xml'
 
 		local filelists = 
@@ -69,8 +68,9 @@ return {
 			filenames = torch.CharTensor(numMaxSamples, 16):zero(),
 			labels = torch.FloatTensor(numMaxSamples, #classLabels):zero(),
 			objectBoxes = torch.FloatTensor(numMaxSamples * numMaxObjectsPerSample, 5):zero(),
-			objectBoxesInds = torch.FloatTensor(numMaxSamples, 2):zero(),
-			jpegs = tds.hash(),
+			objectBoxesInds = torch.IntTensor(numMaxSamples, 2):zero(),
+			jpegs = torch.ByteTensor(numMaxSamples * 50000):zero(),
+			jpegsInds = torch.IntTensor(numMaxSamples, 2):zero(),
 
 			getNumSamples = function(self)
 				return self.numSamples
@@ -81,12 +81,11 @@ return {
 			end,
 
 			getGroundTruthBoxes = function(self, exampleIdx)
-				return self.objectBoxes:narrow(1, self.objectBoxesInds[exampleIdx][1], self.objectBoxesInds[exampleIdx][2])
+				return self.objectBoxes:sub(self.objectBoxesInds[exampleIdx][1], self.objectBoxesInds[exampleIdx][2])
 			end,
 
-			decompressImage = function(self, exampleIdx)
-				image = image or (require 'image')
-				return image.decompressJPG(self.jpegs[exampleIdx], 3, 'byte')
+			getJpegBytes = function(self, exampleIdx)
+				return self.jpegs:sub(self.jpegsInds[exampleIdx][1], self.jpegsInds[exampleIdx][2])
 			end,
 
 			getLabels = function(self, exampleIdx)
@@ -98,6 +97,7 @@ return {
 
 		for _, subset in ipairs{'train', 'val', 'test'} do
 			local exampleIdx = 1
+			local jpegsFirstByteInd = 1
 			for line in io.lines(filelists[subset]) do
 				assert(exampleIdx <= numMaxSamples)
 				assert(#line < voc[subset].filenames:size(2))
@@ -109,12 +109,16 @@ return {
 				f:seekEnd()
 				local file_size_bytes = f:position() - 1
 				f:seek(1)
-				voc[subset].jpegs[exampleIdx] = torch.ByteTensor(file_size_bytes)
-				f:readByte(voc[subset].jpegs[exampleIdx]:storage())
+				local bytes = torch.ByteTensor(file_size_bytes)
+				f:readByte(bytes:storage())
+				voc[subset].jpegsInds[exampleIdx] = torch.IntTensor({jpegsFirstByteInd, jpegsFirstByteInd + file_size_bytes - 1})
+				voc[subset]:getJpegBytes(exampleIdx):copy(bytes)
 				f:close()
 
+				jpegsFirstByteInd = voc[subset].jpegsInds[exampleIdx][2] + 1
 				exampleIdx = exampleIdx + 1
 			end
+			voc[subset].numSamples = exampleIdx - 1
 		end	 
 		local testHasAnnotation = VOCdevkit_VOCYEAR:find('2007') ~= nil
 		for _, subset in ipairs(testHasAnnotation and {'train', 'val', 'test'} or {'train', 'val'})  do
@@ -155,7 +159,7 @@ return {
 					end
 				end
 				
-				voc[subset].objectBoxesInds[exampleIdx] = torch.FloatTensor({firstObjectBoxIdx, objectBoxIdx - firstObjectBoxIdx})
+				voc[subset].objectBoxesInds[exampleIdx] = torch.IntTensor({firstObjectBoxIdx, objectBoxIdx - 1})
 				exampleIdx = exampleIdx + 1
 			end
 		end
@@ -166,13 +170,14 @@ return {
 		end
 		
 		for _, subset in ipairs{'train', 'val', 'test'} do
-			voc[subset].numSamples = #voc[subset].jpegs
-			voc[subset].filenames = voc[subset].filenames:narrow(1, 1, voc[subset].numSamples)
-			voc[subset].labels = voc[subset].labels:narrow(1, 1, voc[subset].numSamples)
+			voc[subset].filenames = voc[subset].filenames:sub(1, voc[subset].numSamples)
+			voc[subset].labels = voc[subset].labels:sub(1, voc[subset].numSamples)
+			voc[subset].jpegsInds = voc[subset].jpegsInds:sub(1, voc[subset].numSamples)
+			voc[subset].jpegs = voc[subset].jpegs:sub(1, voc[subset].jpegsInds[voc[subset].numSamples][2])
 
 			if voc[subset].objectBoxes and voc[subset].objectBoxesInds then
-				voc[subset].objectBoxesInds =  voc[subset].objectBoxesInds:narrow(1, 1, voc[subset].numSamples)
-				voc[subset].objectBoxes = voc[subset].objectBoxes:narrow(1, 1, voc[subset].objectBoxesInds[voc[subset].numSamples][1] + voc[subset].objectBoxesInds[voc[subset].numSamples][2])
+				voc[subset].objectBoxesInds =  voc[subset].objectBoxesInds:sub(1, voc[subset].numSamples)
+				voc[subset].objectBoxes = voc[subset].objectBoxes:sub(1, voc[subset].objectBoxesInds[voc[subset].numSamples][2])
 			end
 		end
 
@@ -189,8 +194,12 @@ return {
 				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getGroundTruthBoxes(exampleIdx) or voc['val']:getGroundTruthBoxes(exampleIdx - voc['train']:getNumSamples())
 			end,
 
-			decompressImage = function(self, exampleIdx)
-				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:decompressImage(exampleIdx) or voc['val']:decompressImage(exampleIdx - voc['train']:getNumSamples())
+			getJpegBytes = function(self, exampleIdx)
+				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getJpegBytes(exampleIdx) or voc['val']:getJpegBytes(exampleIdx - voc['train']:getNumSamples())
+			end,
+
+			decompressImage = function(self, exampleIdx, tensorType)
+				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:decompressImage(exampleIdx, tensorType) or voc['val']:decompressImage(exampleIdx - voc['train']:getNumSamples(), tensorType)
 			end,
 
 			getLabels = function(self, exampleIdx)
