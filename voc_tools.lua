@@ -198,10 +198,6 @@ return {
 				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getJpegBytes(exampleIdx) or voc['val']:getJpegBytes(exampleIdx - voc['train']:getNumSamples())
 			end,
 
-			decompressImage = function(self, exampleIdx, tensorType)
-				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:decompressImage(exampleIdx, tensorType) or voc['val']:decompressImage(exampleIdx - voc['train']:getNumSamples(), tensorType)
-			end,
-
 			getLabels = function(self, exampleIdx)
 				return exampleIdx <= voc['train']:getNumSamples() and voc['train']:getLabels(exampleIdx) or voc['val']:getLabels(exampleIdx - voc['train']:getNumSamples())
 			end
