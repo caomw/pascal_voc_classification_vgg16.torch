@@ -20,6 +20,7 @@ local dataset_loader = {
 	scale = {800, 608},
 	bgrPixelMeans = {102.9801, 115.9465, 122.7717},
 	subsets = subsets or {[true] = 'train', [false] = 'val'},
+	voc = voc,
 
 	makeBatchTable = function(self, batchSize, isTrainingPhase)
 		local images = torch.FloatTensor(batchSize, 3, self.scale[2], self.scale[1])

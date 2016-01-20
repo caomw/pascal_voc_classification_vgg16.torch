@@ -1,7 +1,7 @@
 return {
 	EXTERNAL = 
 	{
-		VOC_TRAINVAL_TEST = 'data/voc12/trainval/VOCdevkit/VOC2012',
+		VOC_TRAINVAL_TEST = 'data/VOCdevkit/VOC2012',
 		VGG16_PROTOTXT = 'data/VGG_ILSVRC_16_layers_deploy.prototxt',
 		VGG16_CAFFEMODEL = 'data/VGG_ILSVRC_16_layers.caffemodel'
 	},

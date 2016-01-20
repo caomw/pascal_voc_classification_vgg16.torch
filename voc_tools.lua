@@ -69,7 +69,7 @@ return {
 			labels = torch.FloatTensor(numMaxSamples, #classLabels):zero(),
 			objectBoxes = torch.FloatTensor(numMaxSamples * numMaxObjectsPerSample, 5):zero(),
 			objectBoxesInds = torch.IntTensor(numMaxSamples, 2):zero(),
-			jpegs = torch.ByteTensor(numMaxSamples * 50000):zero(),
+			jpegs = torch.ByteTensor(numMaxSamples * 3 * 50000):zero(),
 			jpegsInds = torch.IntTensor(numMaxSamples, 2):zero(),
 
 			getNumSamples = function(self)
