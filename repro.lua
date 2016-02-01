@@ -20,7 +20,6 @@ local dataset_loader = {
 	scale = {800, 608},
 	bgrPixelMeans = {102.9801, 115.9465, 122.7717},
 	subsets = subsets or {[true] = 'train', [false] = 'val'},
-	voc = voc,
 
 	makeBatchTable = function(self, batchSize, isTrainingPhase)
 		local images = torch.FloatTensor(batchSize, 3, self.scale[2], self.scale[1])
@@ -30,12 +29,12 @@ local dataset_loader = {
 	end,
 
 	getNumSamples = function(self, isTrainingPhase)
-		return self.voc[self.subsets[isTrainingPhase]]:getNumSamples()
+		return voc[self.subsets[isTrainingPhase]]:getNumSamples()
 	end,
 
 	loadExample = function(self, exampleIdx, isTrainingPhase)
-		local	labels_loaded = self.voc[self.subsets[isTrainingPhase]]:getLabels(exampleIdx)
-		local	jpeg = self.voc[self.subsets[isTrainingPhase]]:getJpegBytes(exampleIdx)
+		local	labels_loaded = voc[self.subsets[isTrainingPhase]]:getLabels(exampleIdx)
+		local	jpeg = voc[self.subsets[isTrainingPhase]]:getJpegBytes(exampleIdx)
 		local	scale = self.scale
 		local	numRoisPerImage = self.numRoisPerImage
 		local   bgr_pixel_means = self.bgrPixelMeans

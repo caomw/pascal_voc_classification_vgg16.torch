@@ -8,8 +8,8 @@ function ParallelBatchLoader:__init(loader, nThreads)
 	self.loader = loader
 	self.nThreads = nThreads or 16
 
-	self.nextBatchIdx = {[true] = 1, [false] = 1}
-	self.preloadedBatchIdx = {[true] = nil, [false] = nil}
+	self.nextBatchIdx = 1
+	self.preloadedBatchIdx = nil
 	
 	self.batchSize = nil
 	self.batchBuffers = nil
@@ -86,8 +86,7 @@ function ParallelBatchLoader:getBatchSize()
 end
 
 function ParallelBatchLoader:getNumBatches()
-	assert(self.batchSize)
-	return torch.ceil(self:getNumSamples() / self.batchSize)
+	return torch.ceil(self:getNumSamples() / assert(self.batchSize))
 end
 
 function ParallelBatchLoader:getNumSamples()
