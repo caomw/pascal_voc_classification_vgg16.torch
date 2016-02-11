@@ -11,7 +11,7 @@ function ParallelBatchLoader:__init(loader, nThreads)
 	self.nextBatchIdx = 1
 	self.preloadedBatchIdx = nil
 	
-	self.batchSize = nil
+	self.batchSize = {[true] = nil, [false] = nil}
 	self.batchBuffers = nil
 	self.currentBufferIdx = 1
 	
@@ -19,17 +19,17 @@ function ParallelBatchLoader:__init(loader, nThreads)
 	threads.Threads.serialization('threads.sharedserialize')
 	self.jobQueue = threads.Threads(self.nThreads)
 
-	self:evaluate()
+	parent:evaluate()
 end
 
 function ParallelBatchLoader:loadBatch(exampleIdxBegin)
 	self.jobQueue:synchronize()
 
 	self.currentBufferIdx = 3 - self.currentBufferIdx
-	local batchTable = self.batchBuffers[self.train][self.currentBufferIdx]
+	local batchTable = self.batchBuffers[self.currentBufferIdx]
 	local isTrainingPhase = self.train
 
-	for exampleIndexInBatch = 1, self.batchSize do
+	for exampleIndexInBatch = 1, self:getBatchSize() do
 		local exampleIdx = isTrainingPhase and torch.random(1, self:getNumSamples()) or (exampleIdxBegin - 1 + exampleIndexInBatch)
 		local fillBatchTable = self.loader:loadExample(exampleIdx, isTrainingPhase)
 		self.jobQueue:addjob(function()	fillBatchTable(exampleIndexInBatch, batchTable) end)
@@ -40,53 +40,66 @@ function ParallelBatchLoader:getBatch(batchIdx)
 	batchIdx = batchIdx or 1
 	assert(batchIdx <= self:getNumBatches())
 	
-	local exampleIdxBegin = 1 + (batchIdx - 1) * self.batchSize
-	local exampleIdxEnd = 1 + math.min(batchIdx * self.batchSize, self:getNumSamples())
+	local exampleIdxBegin = 1 + (batchIdx - 1) * self:getBatchSize()
+	local exampleIdxEnd = 1 + math.min(batchIdx * self:getBatchSize(), self:getNumSamples())
 	local effectiveBatchSize = exampleIdxEnd - exampleIdxBegin
-	local oldBatchSize = self.batchSize
+	local oldBatchSize = self:getBatchSize()
 
-	if batchIdx ~= self.preloadedBatchIdx[self.train] or effectiveBatchSize ~= self.batchSize then
+	if batchIdx ~= self.preloadedBatchIdx or effectiveBatchSize ~= self:getBatchSize() then
 		self:setBatchSize(effectiveBatchSize)
-		self.preloadedBatchIdx[self.train] = batchIdx
+		self.preloadedBatchIdx = batchIdx
 		self:loadBatch(exampleIdxBegin)
 	end
 
 	self.jobQueue:synchronize()
-	local loadedBatchTable = self.batchBuffers[self.train][self.currentBufferIdx]
+	local loadedBatchTable = self.batchBuffers[self.currentBufferIdx]
 
-	if self.batchSize ~= oldBatchSize then
+	if self:getBatchSize() ~= oldBatchSize then
 		self:setBatchSize(oldBatchSize)
 	end
 
 	local nextBatchIdx = batchIdx + 1
 	if nextBatchIdx < self:getNumBatches() then
-		self.preloadedBatchIdx[self.train] = nextBatchIdx
-		self:loadBatch(exampleIdxBegin + self.batchSize)
+		self.preloadedBatchIdx = nextBatchIdx
+		self:loadBatch(exampleIdxBegin + self:getBatchSize())
 	end
 
 	return loadedBatchTable
 end
 
 function ParallelBatchLoader:updateOutput()
-	assert(self.batchSize)
-	local batchIdx = self.nextBatchIdx[self.train]
-	self.output = self:getBatch(batchIdx)
-	self.nextBatchIdx[self.train] = batchIdx + 1
+	assert(self:getBatchSize())
+	assert(self.nextBatchIdx)
+	self.output = self:getBatch(self.nextBatchIdx)
+	self.nextBatchIdx = self.nextBatchIdx + 1
 	return self.output
 end
 
 function ParallelBatchLoader:setBatchSize(batchSize)
-	self.batchSize = batchSize
-	self.batchBuffers = {[true] = {self.loader:makeBatchTable(batchSize, true), self.loader:makeBatchTable(batchSize, true)}, [false] = {self.loader:makeBatchTable(batchSize, false), self.loader:makeBatchTable(batchSize, false)}}
+	if type(batchSize) == 'table' then
+		self.batchSize = {[true] = batchSize.training, [false] = batchSize.evaluate}
+	else
+		self.batchSize[self.train] = batchSize
+		if self.batchSize[not self.train] == nil then
+			self.batchSize[not self.train] = batchSize
+		end
+	end
+
+	self:reinitBatchBuffers()
+
 	return self
 end
 
+function ParallelBatchLoader:reinitBatchBuffers()
+	self.batchBuffers = {self.loader:makeBatchTable(self:getBatchSize(), self.train), self.loader:makeBatchTable(self:getBatchSize(), self.train)}
+end
+
 function ParallelBatchLoader:getBatchSize()
-	return self.batchSize
+	return self.batchSize[self.train]
 end
 
 function ParallelBatchLoader:getNumBatches()
-	return torch.ceil(self:getNumSamples() / assert(self.batchSize))
+	return torch.ceil(self:getNumSamples() / self:getBatchSize())
 end
 
 function ParallelBatchLoader:getNumSamples()
@@ -95,10 +108,12 @@ end
 
 function ParallelBatchLoader:training()
 	parent:training()
-	self.nextBatchIdx[self.train] = 1
+	self.nextBatchIdx = 1
+	self:reinitBatchBuffers()
 end
 
 function ParallelBatchLoader:evaluate()
 	parent:evaluate()
-	self.nextBatchIdx[self.train] = 1
+	self.nextBatchIdx = 1
+	self:reinitBatchBuffers()
 end
