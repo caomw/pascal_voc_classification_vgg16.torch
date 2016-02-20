@@ -102,7 +102,7 @@ return {
 				assert(exampleIdx <= numMaxSamples)
 				assert(#line < voc[subset].filenames:size(2))
 
-				ffi.copy(voc[subset].filenames:data() + voc[subset].filenames:size(2) * (exampleIdx - 1), line)
+				ffi.copy(voc[subset].filenames[exampleIdx]:data(), line)
 					
 				local f = torch.DiskFile(paths.concat(VOCdevkit_VOCYEAR, 'JPEGImages', line .. '.jpg'), 'r')
 				f:binary()
